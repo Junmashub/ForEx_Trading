@@ -1,0 +1,676 @@
+#!/usr/bin/env python
+# coding: utf-8
+
+# In[175]:
+
+
+import pandas as pd
+import numpy as np
+import datetime
+import json
+import requests
+import pywt
+import matplotlib.pyplot as plt
+from sklearn import cluster
+from arctic import Arctic
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import r2_score
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestRegressor
+import statsmodels.api as sm
+from sklearn import metrics
+from xgboost import XGBClassifier
+from xgboost import plot_importance
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import KFold
+from sklearn import svm
+from sklearn.metrics import classification_report, confusion_matrix, accuracy_score
+import seaborn as sns; sns.set()
+
+
+# ## Data Extraction
+
+# In[63]:
+
+
+def create_df(info):
+    df1 = pd.DataFrame(columns = ["timestamp","currency_pair","fx_rate"],dtype=object)
+
+    for i in range(len(info['currencies'])):
+        currency  = info['currencies'][i] 
+        api_url = f"https://api.polygon.io/v2/aggs/ticker/C:{currency}/range/{info['multiplier']}/{info['timespan']}/{info['from']}/{info['to']}?adjusted=true&apiKey={info['apiKey']}"
+        #Get FX data  
+        data = requests.get(api_url).json()
+        
+        for i in range(len(data['results'])):
+            timestamp = data['results'][i]['t']
+            fx_rate = data['results'][i]['c']
+            currency_pair = currency     
+            rows  = [timestamp, currency_pair, fx_rate]
+            df1.loc[len(df1),:] = rows
+            
+    return df1
+
+
+# In[65]:
+
+
+info1 = {
+        'timespan':'minute',
+        'multiplier':'1',
+        'from':'2021-10-25',
+        'to':'2021-10-29',
+        'currencies':['GBPUSD','EURUSD','USDJPY','USDCAD','USDCHF','AUDUSD'],
+        'apiKey':'Zvz5LFBoUkTBu5b3D7u0W1RCKTtdxjZZ'
+        }
+
+df1 = create_df(info1)
+df1
+
+
+# In[66]:
+
+
+#Create an empty Library through Version Store method 
+a = Arctic('localhost')
+a.initialize_library('HW4')
+lib = a['HW4']
+#Store the data in the Arctic library
+lib.write('currency_exchange', df1)
+#read the data from the Arctic library
+df = lib.read('currency_exchange').data
+df
+
+
+# In[67]:
+
+
+df['date'] = pd.to_datetime(df['timestamp'],unit = 'ms') - datetime.timedelta(hours = 6)
+df['minute'] = df['date'].dt.minute
+df
+
+
+# In[68]:
+
+
+#compression_opts = dict(method = 'zip', archive_name = 'out.csv')
+#df.to_csv('out.zip', index = False, compression = compression_opts)
+
+
+# ## Classfication Models
+
+# ***Decision Tree Model***
+
+# In[69]:
+
+
+#Decision Tree Model
+def DT_model (df1):
+    X = df1['Return']
+    Y = df1['regime']
+    #Train_test Split
+    X_train, X_test, Y_train, Y_test = train_test_split(X,Y,test_size=0.2,random_state= 15)
+    
+    #Covert Numpy series into array
+    arr = X_train.values
+    
+    # Fit model & Reshape 1D array into 2D array to fit the Requirement of RF Model 
+    model_dt_class = DecisionTreeClassifier(max_depth=4, random_state=42)
+    clf0 = CalibratedClassifierCV(model_dt_class)
+    clf0.fit(arr.reshape(-1,1), Y_train)
+    
+    # Evaluate model
+    arr1 = X_test.values
+    y_pred  =  clf0.predict(arr1.reshape(-1,1))
+    print ( y_pred )
+    print ("y_pred length: ",len(y_pred))
+    
+    #Classification Report
+    print("Classification report: \n")
+    print(classification_report(Y_test, y_pred))
+    #confustion Matrix
+    print("Confusion matrix: \n")
+    print(confusion_matrix(Y_test, y_pred)) 
+    #Accurracy scores
+    print("Decision_tree_score: ", accuracy_score(Y_test, y_pred))
+
+    return clf0
+
+
+# ***Randomforest Model***
+
+# In[70]:
+
+
+def RF_model (df1):
+    X = df1['Return']
+    Y = df1['regime']
+    #Train_test Split
+    X_train, X_test, Y_train, Y_test = train_test_split(X,Y,test_size=0.2,random_state= 15)
+    
+    #Covert Numpy series into array
+    arr = X_train.values
+    
+    # Fit model & Reshape 1D array into 2D array to fit the Requirement of RF Model 
+    model_rf_class = RandomForestClassifier(n_estimators = 45,max_depth = 11, random_state =20)
+    clf1 = CalibratedClassifierCV(model_rf_class)
+    clf1.fit(arr.reshape(-1,1), Y_train)
+
+    # Evaluate model
+    arr1 = X_test.values
+    y_pred  =  clf1.predict(arr1.reshape(-1,1))
+    print ( y_pred )
+    print ("y_pred length: ",len(y_pred))
+    
+    #Classification Report
+    print("Classification report: \n")
+    print(classification_report(Y_test, y_pred))
+    #confustion Matrix
+    print("Confusion matrix: \n")
+    print(confusion_matrix(Y_test, y_pred)) 
+    #Accurracy scores
+    print("Randomforest Accuracy_score: ", accuracy_score(Y_test, y_pred))
+
+    return clf1
+
+
+# ***XGboost Model***
+
+# In[71]:
+
+
+#XGboost Model 
+def XGboost_model(df1):
+    X = df1['Return']
+    Y = df1['regime']
+    X_train, X_test, Y_train, Y_test = train_test_split(X,Y,test_size=0.2,random_state= 15)
+    
+    #Covert Numpy series into array
+    arr = X_train.values
+    
+    model_xgb_class = XGBClassifier()
+    clf2 = CalibratedClassifierCV(model_xgb_class)
+    clf2.fit(arr.reshape(-1,1), Y_train)
+    
+    # Evaluate model
+    arr1 = X_test.values
+    y_pred  =  clf2.predict(arr1.reshape(-1,1))
+    print( y_pred )
+    print ("y_pred length: ",len(y_pred))
+    
+    #Classification Report
+    print("Classification report: \n")
+    print(classification_report(Y_test, y_pred))
+    #confustion Matrix
+    print("Confusion matrix: \n")
+    print(confusion_matrix(Y_test, y_pred)) 
+    #Accurracy scores
+    print("XGboost Accuracy_score: ", accuracy_score(Y_test, y_pred))
+    
+    return clf2
+
+
+# ***KNN Model***
+
+# In[72]:
+
+
+#KNN Model
+def KNN_model(df1):
+    X = df1['Return']
+    Y = df1['regime']
+    X_train, X_test, Y_train, Y_test = train_test_split(X,Y,test_size=0.2,random_state= 15)
+    
+    #Covert Numpy series into array
+    arr = X_train.values
+    
+    # Fit model & Reshape 1D array into 2D array to fit the Requirement of KNN Model
+    model_knn_class = KNeighborsClassifier( n_neighbors= 6 )
+    clf3 = CalibratedClassifierCV(model_knn_class)
+    clf3.fit(arr.reshape(-1,1), Y_train)
+    
+    # Evaluate model
+    arr1 = X_test.values
+    y_pred  =  clf3.predict(arr1.reshape(-1,1))
+    print (y_pred)
+    print ("y_pred length: ",len(y_pred))
+    
+    #Classification Report
+    print("Classification report: \n")
+    print(classification_report(Y_test, y_pred))
+    #confustion Matrix
+    print("Confusion matrix: \n")
+    print(confusion_matrix(Y_test, y_pred)) 
+    #Accurracy scores
+    print("KNN Accuracy_score: ", accuracy_score(Y_test, y_pred))
+    
+    return clf3
+
+
+# ***Gradient Boosting Model***
+
+# In[73]:
+
+
+#Gradient Boosting Model
+def GB_model(df1):
+    X = df1['Return']
+    Y = df1['regime']
+    X_train, X_test, Y_train, Y_test = train_test_split(X,Y,test_size=0.2,random_state= 15)
+    
+    #Covert Numpy series into array
+    arr = X_train.values
+    
+    # Fit model & Reshape 1D array into 2D array to fit the Requirement of KNN Model 
+    model_GB_class = GradientBoostingClassifier(learning_rate=0.1, n_estimators=1200,max_depth=7, random_state= 9)
+    clf4 = CalibratedClassifierCV(model_GB_class)
+    clf4.fit(arr.reshape(-1,1), Y_train)
+    
+    # Evaluate model
+    arr1 = X_test.values
+    y_pred  = clf4.predict(arr1.reshape(-1,1))
+    print( y_pred )
+    print ("y_pred length: ",len(y_pred))
+    
+    #Classification Report
+    print("Classification report: \n")
+    print(classification_report(Y_test, y_pred))
+    #confustion Matrix
+    print("Confusion matrix: \n")
+    print(confusion_matrix(Y_test, y_pred)) 
+    #Accurracy scores
+    print("GB Accuracy_score: ", accuracy_score(Y_test, y_pred))
+    
+    return clf4
+
+
+# ***Logistics Regression***
+
+# In[74]:
+
+
+def LR_model(df1):
+    X = df1['Return']
+    Y = df1['regime']
+    X_train, X_test, Y_train, Y_test = train_test_split(X,Y,test_size=0.2,random_state= 15)
+    
+    arr = X_train.values
+    # Fit model & Reshape 1D array into 2D array to fit the Requirement of KNN Model 
+    model_LR_class = LogisticRegression(multi_class = 'multinomial')
+    clf5 = CalibratedClassifierCV(model_LR_class)
+    clf5.fit(arr.reshape(-1,1), Y_train)
+    
+    # Evaluate model
+    arr1 = X_test.values
+    y_pred  = clf5.predict(arr1.reshape(-1,1))
+    print( y_pred )
+    print ("y_pred length: ",len(y_pred))
+    
+    #Classification Report
+    print("Classification report: \n")
+    print(classification_report(Y_test, y_pred))
+    #confustion Matrix
+    print("Confusion matrix: \n")
+    print(confusion_matrix(Y_test, y_pred)) 
+    #Accurracy scores
+    print("LR Accuracy_score: ", accuracy_score(Y_test, y_pred))
+    
+    return clf5
+
+
+# ## CWT & Clustering
+
+# In[90]:
+
+
+#Wavelet
+wavelet_name = "gaus5"
+scales = 2**np.arange(8)
+
+model_dict1 = dict()
+model_dict2 = dict()
+model_dict3 = dict()
+model_dict4 = dict()
+model_dict5 = dict()
+cluster_dict_dict = dict()
+
+for currency_pair in df['currency_pair'].unique():
+  
+    df1 = df.loc[(df['currency_pair'] == currency_pair)].reset_index(drop = True)
+    signal = df1['fx_rate']
+    
+    
+#Calculate returns
+    Return_result  = [0]
+    for i in range (1,5000):
+        Return_result.append((signal.iloc[i] - signal.iloc[i - 1]) /signal.iloc[i - 1 ])
+    Re = pd.Series (Return_result)
+    df1['Return'] = Re   
+    print(df1)
+    
+    signal1 = df1['Return']
+    signal_ext = pd.concat([signal1.iloc[:100][::-1], signal1, signal1.iloc[::-1][:100]])
+    
+    coef, freq = pywt.cwt(signal_ext, scales, wavelet_name)
+    coef = coef[:, 100:-100]
+    df_coef = pd.DataFrame(coef).T
+    df_coef.columns = [str(int(i)) for i in 1/freq]
+    
+#Clustering    
+    df_coef = df_coef.fillna(0)
+    
+    params = {"n_clusters": 3}
+    spectral = cluster.SpectralClustering(n_clusters = params['n_clusters'],
+                                            eigen_solver = "arpack",
+                                            affinity = "nearest_neighbors",
+                                            assign_labels = "discretize",
+                                            random_state = 42)
+
+    X = np.array(df_coef)
+    print(df_coef.shape)
+    X = StandardScaler().fit_transform(X)
+    spectral.fit(X)
+    y_pred = spectral.labels_.astype(np.int)
+    df_coef['regime'] = y_pred
+    df1["regime"] = y_pred
+    
+    #Boxplot
+    df1.boxplot(column = 'Return', by='regime')
+    max_value = max(df1['Return'])
+    min_value = min(df1['Return'])
+    data_range = max_value-min_value
+    plt.ylim([min_value, max_value])
+    plt.show()
+    
+    #dictionary to match cluster number and decision cluster
+    mean = df1[['Return','regime']].groupby(['regime']).mean()
+    print(mean)
+    std = df1[['Return','regime']].groupby(['regime']).std()
+    size = df1[['Return','regime']].groupby(['regime']).size()
+    sell_cluster, hold_cluster, buy_cluster = mean.sort_values('Return').index
+    cluster_dict = {
+    "sell_cluster": sell_cluster,
+    "hold_cluster": hold_cluster,
+    "buy_cluster": buy_cluster}
+    print(cluster_dict)
+    cluster_dict_dict[currency_pair] = cluster_dict
+
+
+    #model_dict[currency_pair] = DT_model(df1)
+    model_dict1[currency_pair] = XGboost_model(df1)
+    model_dict2[currency_pair] = RF_model (df1)
+    model_dict3[currency_pair] = KNN_model(df1)
+    model_dict4[currency_pair] = GB_model(df1)
+    model_dict5[currency_pair] = LR_model(df1)
+    
+
+
+# ## Real-time Data Extraction
+
+# In[91]:
+
+
+#functions of getting real-time data 
+def extract_client():
+    currencies = ['GBP','EUR','JPY','SAR','CNY','RUB']
+    key = "beBybSi8daPgsTp5yx5cHtHpYcrjp5Jq"
+    
+    with RESTClient(key) as client:
+        for i in range(len(currencies)):
+            with RESTClient(key) as client:
+                from_ = currencies[i] #'USD'
+                to = 'USD'           #currencies[i]
+                data = client.forex_currencies_real_time_currency_conversion(from_, to, amount = 1,precision = 4)
+            #rows = [data.last['timestamp'],currencies[i]+'to'+'USD',data.converted]
+            rows = [data.last['timestamp'],'USD'+'to'+currencies[i],(data.last['ask']+data.last['bid'])/2]
+            df1.loc[len(df1)] = rows
+
+#Data used to test code (historical)
+timespan = "minute"
+multiplier = "6"
+from_ = "2021-12-01"
+to = "2021-12-02"
+currencies = ['GBPUSD','EURUSD','USDJPY','USDCAD','USDCHF','AUDUSD']
+df1 = pd.DataFrame(columns = ["timestamp","currency_pair","fx_rate"],dtype=object)
+
+for i in range(len(currencies)):
+    currency  = currencies[i] 
+    api_url = f"https://api.polygon.io/v2/aggs/ticker/C:{currency}/range/{multiplier}/{timespan}/{from_}/{to}?adjusted=true&apiKey=beBybSi8daPgsTp5yx5cHtHpYcrjp5Jq"
+    #Get FX data  
+    data = requests.get(api_url).json()
+    for i in range(len(data['results'])):
+        timestamp = data['results'][i]['t']
+        fx_rate = data['results'][i]['c']
+        currency_pair = currency
+        rows  = [timestamp, currency_pair, fx_rate]
+        df1.loc[len(df1)] = rows
+print(df1)
+
+
+# ## Return Analysis & Decision Making
+
+# In[122]:
+
+
+cur_list = []
+gain_list = []
+ror_list = []
+
+for currency_pair in df1['currency_pair'].unique():
+    
+    df2 = df1.loc[(df1['currency_pair'] == currency_pair)].reset_index(drop = True)
+    fx = df2['fx_rate']
+    
+    #Calculate returns
+    Return_result  = [0]
+    for i in range (1,480):
+        Return_result.append((fx.iloc[i] - fx.iloc[i - 1]) /fx.iloc[i - 1 ])
+    Re = pd.Series (Return_result)
+    df2['Return'] = Re   
+    print(df2)
+    
+    #Data Cleansing
+    test_x = df2['Return'].dropna().to_numpy().reshape(-1,1) 
+    
+    #Prediction
+    m1 = model_dict1[currency_pair]
+    m2 = model_dict2[currency_pair]
+    m3 = model_dict3[currency_pair]
+    m4 = model_dict4[currency_pair]
+    m5 = model_dict5[currency_pair]
+    Model_list = [m1,m2,m3,m4,m5]
+    for m in Model_list:
+        print (i)
+        
+    pred_prob1 = m1.predict_proba(test_x)
+    pred_prob2 = m2.predict_proba(test_x)
+    pred_prob3 = m3.predict_proba(test_x)
+    pred_prob4 = m4.predict_proba(test_x)
+    pred_prob5 = m5.predict_proba(test_x)
+    pred_list = [pred_prob1,pred_prob2,pred_prob3,pred_prob4,pred_prob5]
+    for p in pred_list:
+        print(p)
+    
+    #Decision Making & Investment
+    cluster_dict = cluster_dict_dict[currency_pair]
+    print(cluster_dict)
+    cluster_order = sorted(cluster_dict.keys(), key= lambda x: cluster_dict[x])
+    pred_df1 = pd.DataFrame(pred_prob1, columns=cluster_order)
+    pred_df1['decision'] = pred_df1.idxmax(axis="columns")
+    pred_df2 = pd.DataFrame(pred_prob2, columns=cluster_order)
+    pred_df2['decision'] = pred_df2.idxmax(axis="columns")
+    pred_df3 = pd.DataFrame(pred_prob3, columns=cluster_order)
+    pred_df3['decision'] = pred_df3.idxmax(axis="columns")
+    pred_df4 = pd.DataFrame(pred_prob4, columns=cluster_order)
+    pred_df4['decision'] = pred_df4.idxmax(axis="columns")
+    pred_df5 = pd.DataFrame(pred_prob5, columns=cluster_order)
+    pred_df5['decision'] = pred_df5.idxmax(axis="columns")
+    pred_df = [pred_df1,pred_df2,pred_df3,pred_df4,pred_df5]
+    for i in pred_df:
+        print(i)
+        
+    print(pred_df1.groupby('decision').size())
+    print(pred_df2.groupby('decision').size())
+    print(pred_df3.groupby('decision').size())
+    print(pred_df4.groupby('decision').size())
+    print(pred_df5.groupby('decision').size())
+    
+    sub_ror_list = []
+    sub_gain_list = []
+    for pred in pred_df:
+        
+        money = 100000
+        buysell = 10000
+        for i in range(len(Re)):
+            decision = pred.iloc[i,-1]
+            if decision == 'sell_cluster':
+                money += -buysell * Re[i]
+            elif decision == 'buy_cluster':
+                money += buysell * Re[i]
+
+        gain = money - 100000   
+        ror = gain/100000  
+        print(gain) 
+        #Data Storage
+        sub_gain_list.append(gain)
+        print ("sub_gain:",sub_gain_list)
+        sub_ror_list.append(ror)
+        print ("sub_ror:",sub_ror_list)
+    gain_list.append(sub_gain_list)
+    ror_list.append(sub_ror_list)
+    
+    cur_list.append(currency_pair)
+        
+    
+
+
+# ## Performance Analysis & Conclusion
+
+# In[159]:
+
+
+gain_list1 = np.array(gain_list).T
+print (gain_list1)
+
+
+# In[161]:
+
+
+ror_list1 = np.array(ror_list).T
+print (ror_list1)
+
+
+# In[165]:
+
+
+gain_list1[1]
+
+
+# In[170]:
+
+
+cur_list
+
+
+# In[171]:
+
+
+GBMOD = pd.DataFrame(columns = ["Gradient Boosting","Return","Rate of Return"],dtype = 'object')
+LRMOD = pd.DataFrame(columns = ["Logistics","Return","Rate of Return"],dtype = 'object')
+KNNMOD = pd.DataFrame(columns = ["KNN","Return","Rate of Return"],dtype = 'object')
+RFMOD = pd.DataFrame(columns = ["Random Forest","Return","Rate of Return"],dtype = 'object')
+XGBMOD = pd.DataFrame(columns = ["XG Boost","Return","Rate of Return"],dtype = 'object')
+Models = [GBMOD,LRMOD,KNNMOD,RFMOD,XGBMOD]
+
+
+# In[172]:
+
+
+
+XGBMOD["Rate of Return"] = pd.Series(ror_list1[0])
+XGBMOD['Return'] = pd.Series(gain_list1[0])
+RFMOD["Rate of Return"] = pd.Series(ror_list1[1])
+RFMOD['Return'] = pd.Series(gain_list1[1])
+KNNMOD["Rate of Return"] = pd.Series(ror_list1[2])
+KNNMOD['Return'] = pd.Series(gain_list1[2])
+GBMOD["Rate of Return"] = pd.Series(ror_list1[3])
+GBMOD['Return'] = pd.Series(gain_list1[3])
+LRMOD["Rate of Return"] = pd.Series(ror_list1[4])
+LRMOD['Return'] = pd.Series(gain_list1[4])
+    
+GBMOD["Gradient Boosting"] = cur_list
+LRMOD["Logistics"] = cur_list
+KNNMOD["KNN"] = cur_list
+RFMOD["Random Forest"] = cur_list
+XGBMOD["XG Boost"] =  cur_list
+
+
+# In[173]:
+
+
+analysis = pd.DataFrame(columns = ["Currency","Logistics","Gradient Boosting","KNN","Random Forest","XG Boost"],dtype = 'object')
+analysis['Currency'] = XGBMOD['XG Boost']
+analysis['Logistics'] = LRMOD['Return']
+analysis['Gradient Boosting'] = GBMOD['Return']
+analysis['KNN'] = KNNMOD['Return']
+analysis['Random Forest'] = RFMOD['Return']
+analysis['XG Boost'] = XGBMOD['Return']
+
+
+# In[174]:
+
+
+analysis
+
+
+# In[177]:
+
+
+sns.barplot(x=analysis["Currency"], y=analysis["Logistics"])
+plt.title("Logistic Regression Profits")
+plt.xlabel('Currency Pairs')
+plt.ylabel ('Money Earned')
+
+
+# In[178]:
+
+
+sns.barplot(x=analysis["Currency"], y=analysis["Gradient Boosting"])
+plt.title("Gradient Boosting Profits")
+plt.xlabel('Currency Pairs')
+plt.ylabel ('Money Earned')
+
+
+# In[180]:
+
+
+sns.barplot(x=analysis["Currency"], y=analysis["KNN"])
+plt.title("KNN Profits")
+plt.xlabel('Currency Pairs')
+plt.ylabel ('Money Earned')
+
+
+# In[181]:
+
+
+sns.barplot(x=analysis["Currency"], y=analysis["Random Forest"])
+plt.title("Random Forest Profits")
+plt.xlabel('Currency Pairs')
+plt.ylabel ('Money Earned')
+
+
+# In[179]:
+
+
+sns.barplot(x=analysis["Currency"], y=analysis["XG Boost"])
+plt.title("XG Boost Profits")
+plt.xlabel('Currency Pairs')
+plt.ylabel ('Money Earned')
+
+
+# In[ ]:
