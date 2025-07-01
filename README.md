@@ -103,3 +103,17 @@ Finally, we conducted a performance evaluation of our model using real-time FX m
 ## 7. Conclusion
 
 Overall, Logistic Regression demonstrated the ability to generate better returns for most currency pairs. However, employing multiple models can optimize returns for specific pairs. In particular, AUD/USD, USD/CHF, and USD/JPY showed improved performance across all models, suggesting that targeted investment strategies based on model strengths can enhance overall returns.
+
+## References
+
+1. Triennial Central Bank Survey – Global Forex Market Turnover for April 2019. Basel, Switzerland: Bank for International Settlements, p. 10, 2019-09-16.
+
+2. What Are the Most Commonly Traded Currency Pairs? [Investopedia](https://www.investopedia.com/ask/answers/06/maincurrencypairs.asp).
+
+3. 8 Proven Ways for Improving the “Accuracy” of a Machine Learning Model. [Analytics Vidhya](https://www.analyticsvidhya.com/blog/2015/12/improve-machine-learning-results/).
+
+4. How (not) to use Machine Learning for time series forecasting: Avoiding the pitfalls. [Towards Data Science](https://towardsdatascience.com/how-not-to-use-machine-learning-for-time-series-forecasting-avoiding-the-pitfalls-19f9d7adf424).
+
+5. How to train your machine: JPMorgan FX algos learn to trade better. [Reuters](https://www.reuters.com/article/us-jpm-trading-machines/how-to-train-your-machine-jpmorgan-fx-algos-learn-to-trade-better-idUSKCN1S61JG).
+
+6. Multiclass and multioutput algorithms. [scikit-learn.org](https://scikit-learn.org/stable/modules/multiclass.html).
