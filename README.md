@@ -59,6 +59,8 @@ After obtaining data from Polygon.io, we calculate the return at each point usin
 (T1 rate − T0 rate) / T0 rate. For example, if yesterday’s rate was 0.1 and today’s rate is 0.2, the return is 100% ((0.2−0.1)/0.1). Conversely, if yesterday’s rate was 0.2 and today’s rate dropped to 0.1, the return is -50% ((0.1−0.2)/0.2).
 This illustrates an issue: even when price changes are similar in magnitude, the calculated return rates can differ drastically. To prevent these discrepancies from misleading our model, we apply noise reduction techniques to smooth the return data.
 
+![Equation](equation.png)
+
 We use Continuous Wavelet Transform (CWT) for noise reduction. Wavelet transform decomposes the signal using wavelet bases—functions localized in both time and frequency—which makes it effective at capturing small-scale, transient features in the data. In this project, CWT is applied to the return series to filter out noise and enhance signal quality.
 
 ## 4. Clustering
@@ -97,7 +99,7 @@ Overfitting happens when a model fits the training data too closely, capturing n
 ## 6. Performance Evaluation and Trade Strategy
 
 Finally, we conducted a performance evaluation of our model using real-time FX market data. Beginning with a capital allocation of $10,000, we simulated opening $1,000 positions at each time interval and closing them at the subsequent interval. Across ten simulated trades, we systematically measured the model’s effectiveness, with key performance metrics summarized below.
-
+![Result](result.png)
 ## 7. Conclusion
 
 Overall, Logistic Regression demonstrated the ability to generate better returns for most currency pairs. However, employing multiple models can optimize returns for specific pairs. In particular, AUD/USD, USD/CHF, and USD/JPY showed improved performance across all models, suggesting that targeted investment strategies based on model strengths can enhance overall returns.
